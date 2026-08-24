@@ -66,6 +66,19 @@ SYSTEMS = {
     },
 }
 
+HELP_TEXT = (
+    "Как пользоваться ботом:\n\n"
+    "1. Напишите систему и вопрос, например: «РСЭД — как подписать документ?».\n"
+    "2. Откройте один из найденных результатов.\n"
+    "3. Задавайте уточнения без повторения системы — я помню контекст.\n\n"
+    "Примеры:\n"
+    "• ГИС ЕСКУ — как создать обращение?\n"
+    "• РСУД — как получить API-токен?\n"
+    "• Как настроить Р7-Офис?\n\n"
+    "/reset или «искать везде» — очистить контекст.\n"
+    "/help — снова показать эту инструкцию."
+)
+
 
 @dataclass(frozen=True)
 class Target:
@@ -162,12 +175,7 @@ async def handle_update(
 
     update_type = update.get("update_type")
     if update_type == "bot_started":
-        await api.send(
-            target.param,
-            target.id,
-            "Здравствуйте! Напишите систему и вопрос, например: «РСЭД — как подписать документ?». "
-            "Я запомню систему для следующих уточнений. Команда /reset сбрасывает контекст.",
-        )
+        await api.send(target.param, target.id, "Здравствуйте!\n\n" + HELP_TEXT)
         return
 
     if update_type == "message_callback":
@@ -189,7 +197,10 @@ async def handle_update(
     text = ((message.get("body") or {}).get("text") or "").strip()
     if text.lower() in {"/start", "старт"}:
         storage.clear_conversation(target.key)
-        await api.send(target.param, target.id, "Напишите систему и вопрос. Я сохраню контекст диалога на 24 часа.")
+        await api.send(target.param, target.id, HELP_TEXT)
+        return
+    if text.lower() in {"/help", "помощь", "как пользоваться", "инструкция"}:
+        await api.send(target.param, target.id, HELP_TEXT)
         return
     if text.lower() in {"/reset", "сброс", "сбросить контекст", "искать везде", "меню"}:
         storage.clear_conversation(target.key)
