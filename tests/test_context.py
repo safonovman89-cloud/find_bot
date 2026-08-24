@@ -19,15 +19,37 @@ def test_context_filters_unrelated_results(tmp_path: Path):
         {"title": "Подписание документа", "url": "https://esku/1", "content": "Как подписать документ"},
     ])
     storage.replace_source("files", [
-        {"title": "Руководство РСЭД", "url": "https://files/1", "content": "РСЭД: как подписать документ"},
-        {"title": "Руководство ЕСКУ", "url": "https://files/2", "content": "ГИС ЕСКУ: как подписать документ"},
+        {"title": "Руководство РСЭД", "url": "https://files/РСЭД/1", "content": "РСЭД: как подписать документ"},
+        {"title": "Руководство ЕСКУ", "url": "https://files/ЕСКУ/2", "content": "ГИС ЕСКУ: как подписать документ"},
     ])
     results = _search_all(storage, "как подписать", context="rsed", limit=10)
     urls = {item.url for _, _, item in results}
     assert "https://rsed/1" in urls
-    assert "https://files/1" in urls
+    assert "https://files/РСЭД/1" in urls
     assert "https://esku/1" not in urls
-    assert "https://files/2" not in urls
+    assert "https://files/ЕСКУ/2" not in urls
+
+
+def test_r7_context_rejects_incidental_mentions(tmp_path: Path):
+    storage = Storage(str(tmp_path / "test.sqlite3"))
+    storage.replace_source("kb", [
+        {
+            "title": "Регистрация и авторизация",
+            "url": "https://kb.yanao.ru/books/r7-ofis/page/registraciia",
+            "content": "Настройка и вход в Р7-Офис",
+        },
+    ])
+    storage.replace_source("files", [
+        {
+            "title": "Руководство ТЕЗИС.pdf",
+            "url": "https://files.yanao.ru/download?path=Материалы РСЭД Тезис",
+            "content": "Система ТЕЗИС. Где-то внутри текста упомянут Р7-Офис.",
+        },
+    ])
+    results = _search_all(storage, "как настроить р 7 офис", context="r7", limit=10)
+    assert [item.url for _, _, item in results] == [
+        "https://kb.yanao.ru/books/r7-ofis/page/registraciia"
+    ]
 
 
 def test_history_and_context_can_be_cleared(tmp_path: Path):

@@ -23,46 +23,58 @@ SYSTEMS = {
         "name": "РСЭД",
         "aliases": ("рсэд", "тезис", "диадок", "мэдо"),
         "sources": ("rsed", "files"),
+        "url_hints": {"files": ("рсэд", "тезис", "диадок")},
     },
     "esku": {
         "name": "ГИС ЕСКУ",
         "aliases": ("гис еску", "еску", "гис смета", "смета янао"),
         "sources": ("esku", "files"),
+        "url_hints": {"files": ("еску", "гис смета")},
     },
     "rsud": {
         "name": "ГИС РСУД",
         "aliases": ("гис рсуд", "рсуд", "региональная система управления данными"),
         "sources": ("kb", "files"),
+        "url_hints": {
+            "kb": ("/books/regionalnaia-sistema-upravleniia-dannymi-rsud/", "/books/avtorizaciia-v-gis-rsud/"),
+            "files": ("рсуд",),
+        },
     },
     "r7": {
         "name": "Р7-Офис",
-        "aliases": ("р7 офис", "р7-офис", "r7 офис", "r7-office"),
+        "aliases": ("р7 офис", "р 7 офис", "р7-офис", "r7 офис", "r7-office"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/r7-ofis/",), "files": ("р7", "r7")},
     },
     "epd": {
         "name": "Единый почтовый домен",
         "aliases": ("единый почтовый домен", "епд"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/edinyi-poctovyi-domen-epd/",), "files": ("епд", "почтовый домен")},
     },
     "esv": {
         "name": "Единая система видеонаблюдения",
         "aliases": ("единая система видеонаблюдения", "есв"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/edinaia-sistema-videonabliudeniia-esv/",), "files": ("есв", "видеонаблюден")},
     },
     "bbb": {
         "name": "BigBlueButton",
         "aliases": ("bigbluebutton", "bbb", "веб конференция"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/bigbluebutton-bbb-veb-konferencii/",), "files": ("bigbluebutton", "bbb")},
     },
     "sreda": {
         "name": "Сервис «Среда»",
         "aliases": ("сервис среда", "коммуникационный сервис среда"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/kommunikacionnyi-servis-sreda/",), "files": ("среда",)},
     },
     "antivirus": {
         "name": "Единая антивирусная защита",
         "aliases": ("антивирусная защита", "антивирус", "касперский", "kaspersky"),
         "sources": ("kb", "files"),
+        "url_hints": {"kb": ("/books/edinaia-antivirusnaia-zashhita-ianao/",), "files": ("антивирус", "касперск", "kaspersky")},
     },
 }
 
@@ -135,9 +147,9 @@ def _search_all(storage: Storage, query: str, context: str | None = None, limit:
     config = SYSTEMS.get(context or "")
     sources = config["sources"] if config else tuple(SOURCE_NAMES)
     for source in sources:
-        required = config["aliases"] if config and source in {"files", "kb"} else ()
         boost = config["aliases"] if config else ()
-        items = search(storage, source, query, limit, required_any=required, boost_terms=boost)
+        hints = config.get("url_hints", {}).get(source, ()) if config else ()
+        items = search(storage, source, query, limit, boost_terms=boost, url_hints=hints)
         combined.extend((item.score, source, item) for item in items)
     combined.sort(key=lambda row: (-row[0], row[2].title.lower()))
     return combined[:limit]
