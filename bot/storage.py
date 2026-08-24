@@ -37,6 +37,20 @@ class Storage:
                     event_key TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS chat_context (
+                    target_key TEXT PRIMARY KEY,
+                    system_key TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_key TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS chat_history_target
+                    ON chat_history(target_key, id DESC);
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(pages)")}
             if "fingerprint" not in columns:
@@ -89,3 +103,48 @@ class Storage:
             return True
         except sqlite3.IntegrityError:
             return False
+
+    def set_context(self, target_key: str, system_key: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO chat_context(target_key, system_key) VALUES (?, ?) "
+                "ON CONFLICT(target_key) DO UPDATE SET "
+                "system_key=excluded.system_key, updated_at=CURRENT_TIMESTAMP",
+                (target_key, system_key),
+            )
+
+    def get_context(self, target_key: str) -> str | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT system_key FROM chat_context "
+                "WHERE target_key = ? AND updated_at >= datetime('now', '-24 hours')",
+                (target_key,),
+            ).fetchone()
+        return row["system_key"] if row else None
+
+    def add_history(self, target_key: str, role: str, text: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO chat_history(target_key, role, text) VALUES (?, ?, ?)",
+                (target_key, role, text[:1000]),
+            )
+            db.execute("DELETE FROM chat_history WHERE created_at < datetime('now', '-7 days')")
+            db.execute(
+                "DELETE FROM chat_history WHERE target_key = ? AND id NOT IN "
+                "(SELECT id FROM chat_history WHERE target_key = ? ORDER BY id DESC LIMIT 40)",
+                (target_key, target_key),
+            )
+
+    def recent_user_queries(self, target_key: str, limit: int = 3) -> list[str]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT text FROM chat_history WHERE target_key = ? AND role = 'user' "
+                "ORDER BY id DESC LIMIT ?",
+                (target_key, limit),
+            ).fetchall()
+        return [row["text"] for row in rows]
+
+    def clear_conversation(self, target_key: str) -> None:
+        with self.connect() as db:
+            db.execute("DELETE FROM chat_context WHERE target_key = ?", (target_key,))
+            db.execute("DELETE FROM chat_history WHERE target_key = ?", (target_key,))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ssl
 
 import httpx
@@ -11,7 +12,7 @@ class MaxAPI:
             base_url=base_url,
             headers={"Authorization": token, "Content-Type": "application/json"},
             verify=ssl.create_default_context(),
-            timeout=30,
+            timeout=httpx.Timeout(45, connect=10),
         )
 
     async def close(self) -> None:
@@ -44,6 +45,13 @@ class MaxAPI:
         }
         if marker is not None:
             params["marker"] = marker
-        response = await self.client.get("/updates", params=params)
-        response.raise_for_status()
-        return response.json()
+        for attempt in range(3):
+            try:
+                response = await self.client.get("/updates", params=params)
+                response.raise_for_status()
+                return response.json()
+            except (httpx.TimeoutException, httpx.TransportError):
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1 + attempt * 2)
+        raise RuntimeError("Не удалось получить обновления MAX")

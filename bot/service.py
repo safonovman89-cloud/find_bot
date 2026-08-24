@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from .max_api import MaxAPI
-from .search import search
+from .search import search, words
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -15,6 +15,54 @@ SOURCE_NAMES = {
     "esku": "ГИС ЕСКУ",
     "kb": "База знаний ЯНАО",
     "files": "Документы ЯНАО",
+}
+
+SYSTEMS = {
+    "rsed": {
+        "name": "РСЭД",
+        "aliases": ("рсэд", "тезис", "диадок", "мэдо"),
+        "sources": ("rsed", "files"),
+    },
+    "esku": {
+        "name": "ГИС ЕСКУ",
+        "aliases": ("гис еску", "еску", "гис смета", "смета янао"),
+        "sources": ("esku", "files"),
+    },
+    "rsud": {
+        "name": "ГИС РСУД",
+        "aliases": ("гис рсуд", "рсуд", "региональная система управления данными"),
+        "sources": ("kb", "files"),
+    },
+    "r7": {
+        "name": "Р7-Офис",
+        "aliases": ("р7 офис", "р7-офис", "r7 офис", "r7-office"),
+        "sources": ("kb", "files"),
+    },
+    "epd": {
+        "name": "Единый почтовый домен",
+        "aliases": ("единый почтовый домен", "епд"),
+        "sources": ("kb", "files"),
+    },
+    "esv": {
+        "name": "Единая система видеонаблюдения",
+        "aliases": ("единая система видеонаблюдения", "есв"),
+        "sources": ("kb", "files"),
+    },
+    "bbb": {
+        "name": "BigBlueButton",
+        "aliases": ("bigbluebutton", "bbb", "веб конференция"),
+        "sources": ("kb", "files"),
+    },
+    "sreda": {
+        "name": "Сервис «Среда»",
+        "aliases": ("сервис среда", "коммуникационный сервис среда"),
+        "sources": ("kb", "files"),
+    },
+    "antivirus": {
+        "name": "Единая антивирусная защита",
+        "aliases": ("антивирусная защита", "антивирус", "касперский", "kaspersky"),
+        "sources": ("kb", "files"),
+    },
 }
 
 
@@ -57,22 +105,40 @@ def _event_key(update: dict) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _search_all(storage: Storage, query: str, limit: int = 5):
+def _detect_system(text: str) -> str | None:
+    folded = text.lower().replace("ё", "е")
+    matches = []
+    for key, config in SYSTEMS.items():
+        for alias in config["aliases"]:
+            normalized = alias.lower().replace("ё", "е")
+            if normalized in folded:
+                matches.append((len(normalized), key))
+    return max(matches)[1] if matches else None
+
+
+def _search_all(storage: Storage, query: str, context: str | None = None, limit: int = 5):
     combined = []
-    for source in SOURCE_NAMES:
-        combined.extend((item.score, source, item) for item in search(storage, source, query, limit))
+    config = SYSTEMS.get(context or "")
+    sources = config["sources"] if config else tuple(SOURCE_NAMES)
+    for source in sources:
+        required = config["aliases"] if config and source in {"files", "kb"} else ()
+        boost = config["aliases"] if config else ()
+        items = search(storage, source, query, limit, required_any=required, boost_terms=boost)
+        combined.extend((item.score, source, item) for item in items)
     combined.sort(key=lambda row: (-row[0], row[2].title.lower()))
     return combined[:limit]
 
 
-def _format_results(query: str, results) -> tuple[str, list]:
+def _format_results(query: str, results, context: str | None = None) -> tuple[str, list]:
+    context_name = SYSTEMS.get(context or "", {}).get("name")
     if not results:
+        scope = f" в контексте «{context_name}»" if context_name else ""
         return (
-            f"По запросу «{query}» ничего не найдено. "
-            "Попробуйте сократить запрос или заменить окончание слова.",
+            f"По запросу «{query}»{scope} ничего не найдено. "
+            "Попробуйте сократить запрос или напишите «искать везде» для сброса контекста.",
             [],
         )
-    lines = ["Нашёл во всех базах:"]
+    lines = [f"Контекст поиска: {context_name}" if context_name else "Нашёл во всех базах:"]
     buttons = []
     for number, (_, source, item) in enumerate(results, 1):
         lines.append(f"\n{number}. {item.title}\nИсточник: {SOURCE_NAMES[source]}\n{item.snippet}")
@@ -93,7 +159,8 @@ async def handle_update(update: dict, storage: Storage, api: MaxAPI) -> None:
         await api.send(
             target.param,
             target.id,
-            "Здравствуйте! Напишите ключевые слова — я выполню поиск сразу по всем базам.",
+            "Здравствуйте! Напишите систему и вопрос, например: «РСЭД — как подписать документ?». "
+            "Я запомню систему для следующих уточнений. Команда /reset сбрасывает контекст.",
         )
         return
 
@@ -114,11 +181,28 @@ async def handle_update(update: dict, storage: Storage, api: MaxAPI) -> None:
     if sender.get("is_bot"):
         return
     text = ((message.get("body") or {}).get("text") or "").strip()
-    if text.lower() in {"/start", "старт", "меню"}:
-        await api.send(target.param, target.id, "Напишите ключевые слова — поиск выполняется сразу по всем базам.")
+    if text.lower() in {"/start", "старт"}:
+        storage.clear_conversation(target.key)
+        await api.send(target.param, target.id, "Напишите систему и вопрос. Я сохраню контекст диалога на 24 часа.")
+        return
+    if text.lower() in {"/reset", "сброс", "сбросить контекст", "искать везде", "меню"}:
+        storage.clear_conversation(target.key)
+        await api.send(target.param, target.id, "Контекст и история очищены. Следующий запрос будет искаться по всем базам.")
         return
     if len(text) < 2:
         await api.send(target.param, target.id, "Введите хотя бы два символа для поиска.")
         return
-    result_text, buttons = _format_results(text[:200], _search_all(storage, text))
+    previous_queries = storage.recent_user_queries(target.key, limit=1)
+    explicit_context = _detect_system(text)
+    if explicit_context:
+        storage.set_context(target.key, explicit_context)
+    context = explicit_context or storage.get_context(target.key)
+    query = text
+    is_followup = len(words(text)) <= 3 or text.lower().startswith(("а ", "и ", "как ", "где ", "что ", "почему ", "можно "))
+    if context and is_followup and previous_queries:
+        query = f"{text} {previous_queries[0]}"
+    storage.add_history(target.key, "user", text)
+    results = _search_all(storage, query, context=context)
+    result_text, buttons = _format_results(text[:200], results, context=context)
+    storage.add_history(target.key, "assistant", " | ".join(item.title for _, _, item in results))
     await api.send(target.param, target.id, result_text, buttons)

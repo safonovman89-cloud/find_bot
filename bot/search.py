@@ -29,14 +29,25 @@ def _snippet(content: str, terms: list[str], size: int = 230) -> str:
     return ("…" if start else "") + text + ("…" if end < len(content) else "")
 
 
-def search(storage: Storage, source: str, query: str, limit: int = 5) -> list[SearchResult]:
+def search(
+    storage: Storage,
+    source: str,
+    query: str,
+    limit: int = 5,
+    required_any: tuple[str, ...] = (),
+    boost_terms: tuple[str, ...] = (),
+) -> list[SearchResult]:
     terms = list(dict.fromkeys(words(query)))[:12]
+    required = list(dict.fromkeys(value.lower().replace("ё", "е") for value in required_any))
+    boosts = list(dict.fromkeys(word for value in boost_terms for word in words(value)))
     if not terms:
         return []
     ranked: list[SearchResult] = []
     for page in storage.all_pages(source):
         title = page["title"].lower().replace("ё", "е")
         content = page["content"].lower().replace("ё", "е")
+        if required and not any(term in title or term in content for term in required):
+            continue
         matched = sum(term in title or term in content for term in terms)
         if not matched:
             continue
@@ -45,7 +56,8 @@ def search(storage: Storage, source: str, query: str, limit: int = 5) -> list[Se
         score += sum(min(content.count(term), 8) * 0.15 for term in terms)
         if all(term in title or term in content for term in terms):
             score += 4
+        score += sum(2.5 for term in boosts if term in title)
+        score += sum(0.4 for term in boosts if term in content)
         ranked.append(SearchResult(page["title"], page["url"], _snippet(page["content"], terms), score))
     ranked.sort(key=lambda item: (-item.score, item.title.lower()))
     return ranked[:limit]
-
