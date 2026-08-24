@@ -46,6 +46,11 @@ class MaxAPI:
         response.raise_for_status()
         return response.json()
 
+    async def set_commands(self, commands: list[dict[str, str]]) -> dict:
+        response = await self.client.patch("/me/commands", json={"commands": commands})
+        response.raise_for_status()
+        return response.json()
+
     async def updates(self, marker: int | None = None, timeout: int = 30) -> dict:
         params: dict[str, str | int] = {
             "timeout": timeout,

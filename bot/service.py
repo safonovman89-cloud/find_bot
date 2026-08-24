@@ -93,6 +93,12 @@ HELP_TEXT = (
     "/help — снова показать эту инструкцию."
 )
 
+BOT_COMMANDS = [
+    {"name": "start", "description": "Начать новый поиск"},
+    {"name": "help", "description": "Показать инструкцию"},
+    {"name": "reset", "description": "Очистить историю и контекст"},
+]
+
 
 @dataclass(frozen=True)
 class Target:

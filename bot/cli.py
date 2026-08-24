@@ -9,7 +9,7 @@ from .ai import AIQueryAnalyzer
 from .config import Settings
 from .indexer import rebuild
 from .max_api import MaxAPI
-from .service import SYSTEMS, handle_update
+from .service import BOT_COMMANDS, SYSTEMS, handle_update
 from .storage import Storage
 
 
@@ -18,6 +18,7 @@ async def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("index", help="обновить локальный индекс инструкций")
     sub.add_parser("set-webhook", help="зарегистрировать MAX webhook")
+    sub.add_parser("set-commands", help="зарегистрировать меню команд MAX")
     sub.add_parser("polling", help="запустить Long Polling для разработки")
     args = parser.parse_args()
 
@@ -32,6 +33,10 @@ async def main() -> None:
     try:
         if args.command == "set-webhook":
             result = await api.subscribe(settings.webhook_url, settings.webhook_secret)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+        if args.command == "set-commands":
+            result = await api.set_commands(BOT_COMMANDS)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return
         storage = Storage(settings.database_path)
