@@ -5,6 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 
+from .ai import AIQueryAnalyzer
 from .max_api import MaxAPI
 from .search import search, words
 from .storage import Storage
@@ -146,7 +147,12 @@ def _format_results(query: str, results, context: str | None = None) -> tuple[st
     return "\n".join(lines)[:3990], buttons
 
 
-async def handle_update(update: dict, storage: Storage, api: MaxAPI) -> None:
+async def handle_update(
+    update: dict,
+    storage: Storage,
+    api: MaxAPI,
+    ai: AIQueryAnalyzer | None = None,
+) -> None:
     target = _target(update)
     if not target:
         log.warning("В событии нет адресата: %s", update.get("update_type"))
@@ -192,14 +198,26 @@ async def handle_update(update: dict, storage: Storage, api: MaxAPI) -> None:
     if len(text) < 2:
         await api.send(target.param, target.id, "Введите хотя бы два символа для поиска.")
         return
-    previous_queries = storage.recent_user_queries(target.key, limit=1)
+    previous_queries = storage.recent_user_queries(target.key, limit=3)
     explicit_context = _detect_system(text)
-    if explicit_context:
-        storage.set_context(target.key, explicit_context)
-    context = explicit_context or storage.get_context(target.key)
+    saved_context = storage.get_context(target.key)
+    understanding = None
+    if ai:
+        understanding = await ai.understand(
+            text=text,
+            history=list(reversed(previous_queries)),
+            current_context=explicit_context or saved_context,
+        )
+    context = explicit_context or (understanding.system if understanding else None) or saved_context
+    if context and (explicit_context or (understanding and understanding.system)):
+        storage.set_context(target.key, context)
     query = text
-    is_followup = len(words(text)) <= 3 or text.lower().startswith(("а ", "и ", "как ", "где ", "что ", "почему ", "можно "))
-    if context and is_followup and previous_queries:
+    if understanding:
+        query = understanding.search_query
+    is_followup = len(words(text)) <= 3 or text.lower().startswith(
+        ("а ", "и ", "как ", "где ", "что ", "почему ", "можно ")
+    )
+    if not understanding and context and is_followup and previous_queries:
         query = f"{text} {previous_queries[0]}"
     storage.add_history(target.key, "user", text)
     results = _search_all(storage, query, context=context)

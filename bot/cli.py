@@ -5,10 +5,11 @@ import asyncio
 import json
 import logging
 
+from .ai import AIQueryAnalyzer
 from .config import Settings
 from .indexer import rebuild
 from .max_api import MaxAPI
-from .service import handle_update
+from .service import SYSTEMS, handle_update
 from .storage import Storage
 
 
@@ -34,6 +35,12 @@ async def main() -> None:
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return
         storage = Storage(settings.database_path)
+        ai = AIQueryAnalyzer(
+            settings.ai_api_key,
+            settings.ai_base_url,
+            settings.ai_model,
+            {key: value["name"] for key, value in SYSTEMS.items()},
+        )
         marker = None
         logging.basicConfig(level=logging.INFO)
         logging.info("Long Polling запущен. Для остановки нажмите Ctrl+C")
@@ -41,12 +48,14 @@ async def main() -> None:
             payload = await api.updates(marker=marker, timeout=30)
             for update in payload.get("updates", []):
                 try:
-                    await handle_update(update, storage, api)
+                    await handle_update(update, storage, api, ai)
                 except Exception:
                     logging.exception("Ошибка обработки события")
             if payload.get("marker") is not None:
                 marker = payload["marker"]
     finally:
+        if "ai" in locals():
+            await ai.close()
         await api.close()
 
 
