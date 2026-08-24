@@ -183,7 +183,7 @@ export default function Home() {
       setHistory(readHistory());
       setContextKey(localStorage.getItem(CONTEXT_KEY));
     });
-    fetch("/search-index.json")
+    fetch(new URL("search-index.json", document.baseURI))
       .then((response) => {
         if (!response.ok) throw new Error("Index unavailable");
         return response.json() as Promise<{ documents: DocumentItem[] }>;

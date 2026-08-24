@@ -44,3 +44,17 @@ test("ships a populated public index and MAX Bridge integration", async () => {
   assert.match(page, /localStorage/);
   assert.match(layout, /https:\/\/st\.max\.ru\/js\/max-web-app\.js/);
 });
+
+test("builds a portable GitHub Pages artifact", async () => {
+  const [html, indexText] = await Promise.all([
+    readFile(new URL("../pages-dist/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../pages-dist/search-index.json", import.meta.url), "utf8"),
+  ]);
+  assert.match(html, /<title>База знаний ЯНАО<\/title>/i);
+  assert.match(html, /src="\.\/assets\//);
+  assert.match(html, /href="\.\/assets\//);
+  assert.match(html, /https:\/\/st\.max\.ru\/js\/max-web-app\.js/);
+  const index = JSON.parse(indexText);
+  assert.ok(index.documents.length >= 1000);
+  assert.ok(index.documents.every((item) => !("content" in item)));
+});

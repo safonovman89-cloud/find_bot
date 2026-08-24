@@ -21,6 +21,8 @@
 
 Публичный адрес: `https://yanao-knowledge-search.safonovman.chatgpt.site`
 
+Для публикации копии на GitHub Pages предусмотрена статическая сборка `npm run build:pages` и workflow `.github/workflows/deploy-miniapp-pages.yml`.
+
 Полные тексты документов в мини-приложение и репозиторий не выгружаются. Скрипт `scripts/export_miniapp_index.py` создаёт только заголовки, ссылки и необратимые поисковые сигнатуры:
 
 ```bash
