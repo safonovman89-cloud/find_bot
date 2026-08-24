@@ -155,7 +155,12 @@ def _search_all(storage: Storage, query: str, context: str | None = None, limit:
     return combined[:limit]
 
 
-def _format_results(query: str, results, context: str | None = None) -> tuple[str, list]:
+def _format_results(
+    query: str,
+    results,
+    context: str | None = None,
+    summary: str | None = None,
+) -> tuple[str, list]:
     context_name = SYSTEMS.get(context or "", {}).get("name")
     if not results:
         scope = f" в контексте «{context_name}»" if context_name else ""
@@ -164,10 +169,21 @@ def _format_results(query: str, results, context: str | None = None) -> tuple[st
             "Попробуйте сократить запрос или напишите «искать везде» для сброса контекста.",
             [],
         )
-    lines = [f"Контекст поиска: {context_name}" if context_name else "Нашёл во всех базах:"]
+    lines = []
+    if context_name:
+        lines.append(f"Контекст поиска: {context_name}")
+    if summary:
+        if lines:
+            lines.append("")
+        lines.extend(["Краткий ответ:", summary, "", "Материалы:"])
+    elif not context_name:
+        lines.append("Нашёл во всех базах:")
     buttons = []
     for number, (_, source, item) in enumerate(results, 1):
-        lines.append(f"\n{number}. {item.title}\nИсточник: {SOURCE_NAMES[source]}\n{item.snippet}")
+        item_text = f"\n{number}. {item.title}\nИсточник: {SOURCE_NAMES[source]}"
+        if not summary:
+            item_text += f"\n{item.snippet}"
+        lines.append(item_text)
         buttons.append([{"type": "link", "text": f"Открыть результат {number}", "url": item.url}])
     return "\n".join(lines)[:3990], buttons
 
@@ -244,6 +260,22 @@ async def handle_update(
         query = f"{text} {previous_queries[0]}"
     storage.add_history(target.key, "user", text)
     results = _search_all(storage, query, context=context)
-    result_text, buttons = _format_results(text[:200], results, context=context)
+    summary = None
+    if ai and results:
+        evidence = [
+            {
+                "number": str(number),
+                "title": item.title,
+                "source": SOURCE_NAMES[source],
+                "excerpt": item.snippet,
+            }
+            for number, (_, source, item) in enumerate(results[:4], 1)
+        ]
+        summary = await ai.summarize(
+            question=text,
+            context_name=SYSTEMS.get(context or "", {}).get("name"),
+            evidence=evidence,
+        )
+    result_text, buttons = _format_results(text[:200], results, context=context, summary=summary)
     storage.add_history(target.key, "assistant", " | ".join(item.title for _, _, item in results))
     await api.send(target.param, target.id, result_text, buttons)
