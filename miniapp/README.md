@@ -30,6 +30,8 @@ npm test
 
 ## GitHub Pages
 
+Публичный адрес мини-приложения: <https://safonovman89-cloud.github.io/find_bot/>.
+
 Команда `npm run build:pages` создаёт переносимый статический сайт в `pages-dist/`. Все пути относительные, поэтому приложение работает как на корневом домене, так и в подкаталоге репозитория GitHub Pages.
 
 Workflow `.github/workflows/deploy-miniapp-pages.yml` собирает и публикует приложение при изменениях в ветке `main`. В настройках репозитория выберите **Settings → Pages → Source: GitHub Actions**.
