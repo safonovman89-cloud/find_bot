@@ -1,0 +1,19 @@
+[Unit]
+Description=MAX search bot for YANAO knowledge bases
+Documentation=https://dev.max.ru/docs/chatbots/bots-coding/prepare
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/safonov/Project_dev/find_bot
+EnvironmentFile=/home/safonov/Project_dev/find_bot/.env
+ExecStart=/home/safonov/Project_dev/find_bot/.venv/bin/python -m bot.cli polling
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

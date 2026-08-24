@@ -1,0 +1,94 @@
+# Поисковый бот для MAX
+
+Бот ищет инструкции и документы по ключевым словам в четырёх базах:
+
+- РСЭД ЯНАО: `https://instructions.yanao.ru/shelves/rsed-yanao`
+- ГИС ЕСКУ: `http://apbook.yanao.int/books/gis-esku`
+- База знаний ЯНАО: `https://kb.yanao.ru/`
+- Публичные документы ЯНАО: `https://files.yanao.ru/s/7MKQp8Xqm9NDQT9`
+
+Пользователь отправляет ключевые слова и получает до пяти наиболее релевантных результатов сразу из всех источников со ссылками. Страницы заранее сохраняются в SQLite, поэтому ответы быстрые и продолжают работать при временной недоступности исходных сайтов.
+
+## Быстрый запуск
+
+Требуется Python 3.11+ и бот, прошедший модерацию MAX.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Загрузите переменные из `.env` удобным для вашей ОС способом и создайте индекс:
+
+```bash
+set -a; source .env; set +a
+python -m bot.cli index
+```
+
+Запустите webhook-сервис:
+
+```bash
+uvicorn bot.app:app --host 0.0.0.0 --port 8000
+```
+
+Снаружи endpoint должен быть доступен как `https://ваш-домен/webhook` на порту 443 с доверенным TLS-сертификатом. После настройки reverse proxy зарегистрируйте подписку:
+
+```bash
+python -m bot.cli set-webhook
+```
+
+Проверка состояния: `GET /health`. В production запускайте один процесс Uvicorn либо вынесите обработку событий в очередь. База SQLite защищает от повторной обработки одинаковых событий MAX.
+
+## Запуск без домена для проверки
+
+Пока публичного HTTPS-домена нет, бот можно проверить через Long Polling:
+
+```bash
+set -a; source .env; set +a
+python -m bot.cli polling
+```
+
+Откройте `https://max.ru/findinfobot`, нажмите «Начать» и отправьте запрос. Long Polling предназначен только для разработки и тестирования; для production MAX рекомендует webhook.
+
+## Автозапуск через systemd
+
+Готовый unit-файл находится в `deploy/findinfobot.service`. Установите и включите его:
+
+```bash
+sudo install -m 0644 deploy/findinfobot.service /etc/systemd/system/findinfobot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now findinfobot.service
+systemctl status findinfobot.service
+```
+
+Просмотр журнала: `journalctl -u findinfobot.service -f`.
+
+Если для пользователя включён systemd linger, можно установить службу без `sudo` из файла `deploy/findinfobot-user.service`:
+
+```bash
+install -Dm644 deploy/findinfobot-user.service ~/.config/systemd/user/findinfobot.service
+systemctl --user daemon-reload
+systemctl --user enable --now findinfobot.service
+```
+
+## Обновление инструкций
+
+Запускайте ежедневно через cron или systemd timer:
+
+```bash
+python -m bot.cli index
+```
+
+Индекс каждого источника заменяется только после успешной загрузки непустого набора страниц.
+Для извлечения текста из старых файлов `.doc` требуется системная утилита `antiword`.
+
+## Переменные окружения
+
+- `MAX_BOT_TOKEN` — токен из платформы MAX для бизнеса;
+- `MAX_WEBHOOK_SECRET` — секрет проверки заголовка `X-Max-Bot-Api-Secret`;
+- `MAX_WEBHOOK_URL` — публичный HTTPS URL, заканчивающийся на `/webhook`;
+- `DATABASE_PATH` — путь к SQLite, по умолчанию `data/bot.sqlite3`.
+
+Не коммитьте `.env` и токен бота.
