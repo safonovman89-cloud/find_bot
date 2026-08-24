@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from .ai import AIQueryAnalyzer
@@ -165,27 +167,47 @@ def _format_results(
     if not results:
         scope = f" в контексте «{context_name}»" if context_name else ""
         return (
-            f"По запросу «{query}»{scope} ничего не найдено. "
+            f"По запросу «{html.escape(query)}»{html.escape(scope)} ничего не найдено. "
             "Попробуйте сократить запрос или напишите «искать везде» для сброса контекста.",
             [],
         )
+    result_urls = {str(number): item.url for number, (_, _, item) in enumerate(results, 1)}
+
+    def link_citations(text: str) -> str:
+        escaped = html.escape(text)
+        return re.sub(
+            r"\[(\d+)\]",
+            lambda match: (
+                f'<a href="{html.escape(result_urls[match.group(1)], quote=True)}">'
+                f'[{match.group(1)}]</a>'
+                if match.group(1) in result_urls
+                else match.group(0)
+            ),
+            escaped,
+        )
+
     lines = []
     if context_name:
-        lines.append(f"Контекст поиска: {context_name}")
+        lines.append(f"<b>Контекст поиска:</b> {html.escape(context_name)}")
     if summary:
         if lines:
             lines.append("")
-        lines.extend(["Краткий ответ:", summary, "", "Материалы:"])
+        lines.extend(["<b>Краткий ответ:</b>", link_citations(summary), "", "<b>Материалы:</b>"])
     elif not context_name:
-        lines.append("Нашёл во всех базах:")
+        lines.append("<b>Нашёл во всех базах:</b>")
     buttons = []
     for number, (_, source, item) in enumerate(results, 1):
-        item_text = f"\n{number}. {item.title}\nИсточник: {SOURCE_NAMES[source]}"
+        safe_url = html.escape(item.url, quote=True)
+        safe_title = html.escape(item.title[:220])
+        item_text = (
+            f'\n{number}. <a href="{safe_url}">{safe_title}</a>'
+            f"\nИсточник: {html.escape(SOURCE_NAMES[source])}"
+        )
         if not summary:
-            item_text += f"\n{item.snippet}"
+            item_text += f"\n{html.escape(item.snippet)}"
         lines.append(item_text)
         buttons.append([{"type": "link", "text": f"Открыть результат {number}", "url": item.url}])
-    return "\n".join(lines)[:3990], buttons
+    return "\n".join(lines), buttons
 
 
 async def handle_update(
@@ -278,4 +300,4 @@ async def handle_update(
         )
     result_text, buttons = _format_results(text[:200], results, context=context, summary=summary)
     storage.add_history(target.key, "assistant", " | ".join(item.title for _, _, item in results))
-    await api.send(target.param, target.id, result_text, buttons)
+    await api.send(target.param, target.id, result_text, buttons, text_format="html")

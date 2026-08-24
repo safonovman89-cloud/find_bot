@@ -18,8 +18,17 @@ class MaxAPI:
     async def close(self) -> None:
         await self.client.aclose()
 
-    async def send(self, target_type: str, target_id: int, text: str, buttons=None) -> None:
+    async def send(
+        self,
+        target_type: str,
+        target_id: int,
+        text: str,
+        buttons=None,
+        text_format: str | None = None,
+    ) -> None:
         body: dict = {"text": text}
+        if text_format:
+            body["format"] = text_format
         if buttons:
             body["attachments"] = [{"type": "inline_keyboard", "payload": {"buttons": buttons}}]
         response = await self.client.post("/messages", params={target_type: target_id}, json=body)

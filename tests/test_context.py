@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from bot.service import _detect_system, _search_all
+from bot.search import SearchResult
+from bot.service import _detect_system, _format_results, _search_all
 from bot.storage import Storage
 
 
@@ -61,3 +62,21 @@ def test_history_and_context_can_be_cleared(tmp_path: Path):
     storage.clear_conversation("user_id:1")
     assert storage.get_context("user_id:1") is None
     assert storage.recent_user_queries("user_id:1") == []
+
+
+def test_result_titles_and_citations_are_hyperlinks():
+    result = SearchResult(
+        title="Доступ к Р7-Офис",
+        url="https://kb.example/r7?x=1&y=2",
+        snippet="Инструкция по входу",
+        score=10,
+    )
+    text, _ = _format_results(
+        "как войти",
+        [(10, "kb", result)],
+        context="r7",
+        summary="Откройте портал из инструкции [1].",
+    )
+    assert '<a href="https://kb.example/r7?x=1&amp;y=2">[1]</a>' in text
+    assert '<a href="https://kb.example/r7?x=1&amp;y=2">Доступ к Р7-Офис</a>' in text
+    assert "<b>Краткий ответ:</b>" in text
