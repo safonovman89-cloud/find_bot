@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from bot.search import SearchResult
-from bot.service import _detect_system, _format_results, _search_all
+from bot.service import (
+    RSED_DOCUMENT_CREATION_STEPS,
+    _detect_system,
+    _format_results,
+    _is_rsed_document_creation_request,
+    _search_all,
+    _search_rsed_document_creation,
+)
 from bot.storage import Storage
 
 
@@ -9,6 +16,13 @@ def test_detects_named_system():
     assert _detect_system("Как подписать документ в РСЭД?") == "rsed"
     assert _detect_system("Не открывается ГИС ЕСКУ") == "esku"
     assert _detect_system("Настройка Р7-Офис") == "r7"
+
+
+def test_detects_rsed_document_creation_request():
+    assert _is_rsed_document_creation_request("Как создать документ в РСЭД?", "rsed")
+    assert _is_rsed_document_creation_request("Создание карточки документа", "rsed")
+    assert not _is_rsed_document_creation_request("Как подписать документ?", "rsed")
+    assert not _is_rsed_document_creation_request("Как создать документ?", "esku")
 
 
 def test_context_filters_unrelated_results(tmp_path: Path):
@@ -51,6 +65,60 @@ def test_r7_context_rejects_incidental_mentions(tmp_path: Path):
     assert [item.url for _, _, item in results] == [
         "https://kb.yanao.ru/books/r7-ofis/page/registraciia"
     ]
+
+
+def test_rsed_creation_uses_exact_user_guide_page(tmp_path: Path):
+    storage = Storage(str(tmp_path / "test.sqlite3"))
+    guide_url = (
+        "https://instructions.yanao.ru/books/instrukciya-polzovatelya-gis-rsed/"
+        "page/11-sozdanie-kartocki-dokumenta-isxodyashhego-vnutrennego"
+    )
+    storage.replace_source("rsed", [
+        {
+            "title": "1.1. Создание карточки документа (исходящего, внутреннего)",
+            "url": guide_url,
+            "content": "Для создания документа выберите способ, вид документа или шаблон.",
+        },
+        {
+            "title": "Обновление РСЭД",
+            "url": "https://instructions.yanao.ru/books/updates/page/latest",
+            "content": "Создать документ в РСЭД. " * 20,
+        },
+    ])
+    storage.replace_source("files", [
+        {
+            "title": "Большое руководство пользователя РСЭД.docx",
+            "url": "https://files.example/manual.docx",
+            "content": "Создать документ в РСЭД. " * 100,
+        },
+    ])
+
+    results = _search_rsed_document_creation(storage)
+
+    assert len(results) == 1
+    assert results[0][1] == "rsed"
+    assert results[0][2].url == guide_url
+
+
+def test_rsed_creation_is_formatted_as_numbered_instruction():
+    result = SearchResult(
+        title="1.1. Создание карточки документа",
+        url="https://instructions.example/rsed/create",
+        snippet="Для создания документа откройте меню Документы.",
+        score=20,
+    )
+    text, _ = _format_results(
+        "как создать документ в РСЭД",
+        [(20, "rsed", result)],
+        context="rsed",
+        summary=RSED_DOCUMENT_CREATION_STEPS,
+        procedural=True,
+    )
+
+    assert "<b>Пошаговая инструкция:</b>" in text
+    assert "1. Откройте создание документа" in text
+    assert "4. В открывшейся карточке" in text
+    assert '<a href="https://instructions.example/rsed/create">[1]</a>' in text
 
 
 def test_history_and_context_can_be_cleared(tmp_path: Path):

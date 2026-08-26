@@ -99,6 +99,20 @@ BOT_COMMANDS = [
     {"name": "reset", "description": "Очистить историю и контекст"},
 ]
 
+RSED_DOCUMENT_CREATION_QUERY = "создание карточки документа исходящего внутреннего"
+RSED_DOCUMENT_CREATION_URL_HINT = (
+    "/books/instrukciya-polzovatelya-gis-rsed/page/11-sozdanie-kartocki-dokumenta"
+)
+RSED_DOCUMENT_CREATION_STEPS = (
+    "1. Откройте создание документа одним из способов: «Документы» → «Создать документ»; "
+    "кнопка «Создать документ», «Создать исходящий документ» или «Создать внутренний документ»; "
+    "либо кнопка «Создать» в списке документов.\n"
+    "2. В открывшемся окне выберите канцелярский вид документа.\n"
+    "3. Выберите вид документа или подходящий шаблон и подтвердите создание.\n"
+    "4. В открывшейся карточке заполните основные сведения. Набор полей зависит от выбранного "
+    "вида документа. [1]"
+)
+
 
 @dataclass(frozen=True)
 class Target:
@@ -150,6 +164,36 @@ def _detect_system(text: str) -> str | None:
     return max(matches)[1] if matches else None
 
 
+def _is_rsed_document_creation_request(text: str, context: str | None) -> bool:
+    """Recognize requests for the canonical RSED document-creation procedure."""
+    if context != "rsed":
+        return False
+    folded = text.lower().replace("ё", "е")
+    has_document = re.search(r"\bдокумент\w*", folded) is not None
+    has_creation = re.search(r"\b(?:созда\w*|завест\w*|оформить)\b", folded) is not None
+    return has_document and has_creation
+
+
+def _search_rsed_document_creation(storage: Storage):
+    """Prefer the exact user-guide page over large manuals and release notes."""
+    items = search(
+        storage,
+        "rsed",
+        RSED_DOCUMENT_CREATION_QUERY,
+        limit=1,
+        url_hints=(RSED_DOCUMENT_CREATION_URL_HINT,),
+    )
+    if not items:
+        items = search(
+            storage,
+            "rsed",
+            RSED_DOCUMENT_CREATION_QUERY,
+            limit=1,
+            required_any=("создание карточки документа",),
+        )
+    return [(item.score, "rsed", item) for item in items]
+
+
 def _search_all(storage: Storage, query: str, context: str | None = None, limit: int = 5):
     combined = []
     config = SYSTEMS.get(context or "")
@@ -168,6 +212,7 @@ def _format_results(
     results,
     context: str | None = None,
     summary: str | None = None,
+    procedural: bool = False,
 ) -> tuple[str, list]:
     context_name = SYSTEMS.get(context or "", {}).get("name")
     if not results:
@@ -198,7 +243,8 @@ def _format_results(
     if summary:
         if lines:
             lines.append("")
-        lines.extend(["<b>Краткий ответ:</b>", link_citations(summary), "", "<b>Материалы:</b>"])
+        answer_title = "Пошаговая инструкция" if procedural else "Краткий ответ"
+        lines.extend([f"<b>{answer_title}:</b>", link_citations(summary), "", "<b>Материалы:</b>"])
     elif not context_name:
         lines.append("<b>Нашёл во всех базах:</b>")
     buttons = []
@@ -286,10 +332,17 @@ async def handle_update(
     )
     if not understanding and context and is_followup and previous_queries:
         query = f"{text} {previous_queries[0]}"
+    procedural = _is_rsed_document_creation_request(text, context)
+    if procedural:
+        query = RSED_DOCUMENT_CREATION_QUERY
     storage.add_history(target.key, "user", text)
-    results = _search_all(storage, query, context=context)
-    summary = None
-    if ai and results:
+    results = (
+        _search_rsed_document_creation(storage)
+        if procedural
+        else _search_all(storage, query, context=context)
+    )
+    summary = RSED_DOCUMENT_CREATION_STEPS if procedural and results else None
+    if ai and results and not procedural:
         evidence = [
             {
                 "number": str(number),
@@ -304,6 +357,12 @@ async def handle_update(
             context_name=SYSTEMS.get(context or "", {}).get("name"),
             evidence=evidence,
         )
-    result_text, buttons = _format_results(text[:200], results, context=context, summary=summary)
+    result_text, buttons = _format_results(
+        text[:200],
+        results,
+        context=context,
+        summary=summary,
+        procedural=procedural,
+    )
     storage.add_history(target.key, "assistant", " | ".join(item.title for _, _, item in results))
     await api.send(target.param, target.id, result_text, buttons, text_format="html")
