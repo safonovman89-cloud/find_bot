@@ -148,3 +148,23 @@ def test_result_titles_and_citations_are_hyperlinks():
     assert '<a href="https://kb.example/r7?x=1&amp;y=2">[1]</a>' in text
     assert '<a href="https://kb.example/r7?x=1&amp;y=2">Доступ к Р7-Офис</a>' in text
     assert "<b>Краткий ответ:</b>" in text
+
+
+def test_legacy_apbook_links_use_public_domain():
+    result = SearchResult(
+        title="Создание обращения ГИС ЕСКУ",
+        url="http://apbook.yanao.int/books/gis-esku/page/create?from=bot",
+        snippet="Инструкция по созданию обращения",
+        score=10,
+    )
+    text, buttons = _format_results(
+        "как создать обращение",
+        [(10, "esku", result)],
+        context="esku",
+        summary="Следуйте инструкции [1].",
+    )
+
+    public = "https://apbook.yanao.ru/books/gis-esku/page/create?from=bot"
+    assert f'<a href="{public}">[1]</a>' in text
+    assert f'<a href="{public}">Создание обращения ГИС ЕСКУ</a>' in text
+    assert buttons[0][0]["url"] == public

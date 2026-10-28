@@ -7,11 +7,18 @@ import json
 import base64
 import re
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from bot.urls import public_url
+
+
 DATABASE = ROOT / "data" / "bot.sqlite3"
 OUTPUT = ROOT / "miniapp" / "public" / "search-index.json"
 BLOOM_BITS = 8192
@@ -49,6 +56,16 @@ def bloom_signature(value: str) -> str:
     return base64.b64encode(signature).decode("ascii")
 
 
+def export_document(row: sqlite3.Row) -> dict[str, str]:
+    url = public_url(row["url"])
+    return {
+        "source": row["source"],
+        "title": compact_text(row["title"]),
+        "url": url,
+        "bloom": bloom_signature(f'{row["title"]} {row["content"]} {url}'),
+    }
+
+
 def main() -> None:
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
@@ -57,16 +74,7 @@ def main() -> None:
     ).fetchall()
     connection.close()
 
-    documents = [
-        {
-            "source": row["source"],
-            "title": compact_text(row["title"]),
-            "url": row["url"],
-            "bloom": bloom_signature(f'{row["title"]} {row["content"]} {row["url"]}'),
-        }
-        for row in rows
-        if row["url"] and row["content"]
-    ]
+    documents = [export_document(row) for row in rows if row["url"] and row["content"]]
 
     payload = {
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),

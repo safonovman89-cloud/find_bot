@@ -11,6 +11,7 @@ from .ai import AIQueryAnalyzer
 from .max_api import MaxAPI
 from .search import search, words
 from .storage import Storage
+from .urls import public_url
 
 log = logging.getLogger(__name__)
 SOURCE_NAMES = {
@@ -222,7 +223,10 @@ def _format_results(
             "Попробуйте сократить запрос или напишите «искать везде» для сброса контекста.",
             [],
         )
-    result_urls = {str(number): item.url for number, (_, _, item) in enumerate(results, 1)}
+    result_urls = {
+        str(number): public_url(item.url)
+        for number, (_, _, item) in enumerate(results, 1)
+    }
 
     def link_citations(text: str) -> str:
         escaped = html.escape(text)
@@ -249,7 +253,8 @@ def _format_results(
         lines.append("<b>Нашёл во всех базах:</b>")
     buttons = []
     for number, (_, source, item) in enumerate(results, 1):
-        safe_url = html.escape(item.url, quote=True)
+        result_url = public_url(item.url)
+        safe_url = html.escape(result_url, quote=True)
         safe_title = html.escape(item.title[:220])
         item_text = (
             f'\n{number}. <a href="{safe_url}">{safe_title}</a>'
@@ -258,7 +263,7 @@ def _format_results(
         if not summary:
             item_text += f"\n{html.escape(item.snippet)}"
         lines.append(item_text)
-        buttons.append([{"type": "link", "text": f"Открыть результат {number}", "url": item.url}])
+        buttons.append([{"type": "link", "text": f"Открыть результат {number}", "url": result_url}])
     return "\n".join(lines), buttons
 
 
