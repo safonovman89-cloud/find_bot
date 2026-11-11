@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: findinfobot
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: findinfobot-data
+  namespace: findinfobot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: findinfobot
+  namespace: findinfobot
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: findinfobot
+  template:
+    metadata:
+      labels:
+        app: findinfobot
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: apk8s.localdomain
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: bot
+          image: docker.io/library/findinfobot:20261111
+          imagePullPolicy: Never
+          envFrom:
+            - secretRef:
+                name: findinfobot-env
+          env:
+            - name: DATABASE_PATH
+              value: /data/bot.sqlite3
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: findinfobot-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: findinfobot-index
+  namespace: findinfobot
+spec:
+  schedule: "15 3 * * *"
+  timeZone: Asia/Yekaterinburg
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: findinfobot-index
+        spec:
+          restartPolicy: OnFailure
+          nodeSelector:
+            kubernetes.io/hostname: apk8s.localdomain
+          securityContext:
+            fsGroup: 10001
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: indexer
+              image: docker.io/library/findinfobot:20261111
+              imagePullPolicy: Never
+              command:
+                - python
+                - -m
+                - bot.cli
+                - index
+              envFrom:
+                - secretRef:
+                    name: findinfobot-env
+              env:
+                - name: DATABASE_PATH
+                  value: /data/bot.sqlite3
+                - name: TMPDIR
+                  value: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 192Mi
+                limits:
+                  cpu: "1"
+                  memory: 768Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 10001
+                runAsGroup: 10001
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: findinfobot-data
+            - name: tmp
+              emptyDir:
+                sizeLimit: 512Mi
