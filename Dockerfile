@@ -6,6 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends antiword \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 findinfobot \
     && useradd --system --uid 10001 --gid findinfobot --home-dir /app findinfobot
 
