@@ -43,7 +43,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: bot
-          image: docker.io/library/findinfobot:20261111
+          image: docker.io/library/findinfobot:20261111-2
           imagePullPolicy: Never
           envFrom:
             - secretRef:
@@ -112,7 +112,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: indexer
-              image: docker.io/library/findinfobot:20261111
+              image: docker.io/library/findinfobot:20261111-2
               imagePullPolicy: Never
               command:
                 - python

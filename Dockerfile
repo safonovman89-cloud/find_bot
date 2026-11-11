@@ -6,8 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+COPY certs/russian-trusted-root-ca.crt /usr/local/share/ca-certificates/russian-trusted-root-ca.crt
+
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends antiword \
+    && apt-get install --yes --no-install-recommends antiword ca-certificates \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 10001 findinfobot \
